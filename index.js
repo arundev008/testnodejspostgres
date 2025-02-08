@@ -3,7 +3,7 @@ const app = express();
 const os = require("os")
 let DataBase = require('./db/postgressql');
 let rootRouter = require("./srv/rootRouter")
-let port = process.env.port || 3000;
+let port = process.env.PORT || 3000;
 // app.listen('/',(req,res) => {
   // res.status(200).send('Welcome to the portal API')
 // })
