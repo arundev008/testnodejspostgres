@@ -7,6 +7,10 @@ let port = process.env.port || 54467;
 // app.listen('/',(req,res) => {
   // res.status(200).send('Welcome to the portal API')
 // })
+
+app.get('/',(req,res) => {
+  res.status(200).send('Welcome to Devsoft Portal API')
+})
 app.listen(port, async (req,res) => {
   await DataBase.connect();
   app.use(rootRouter)
