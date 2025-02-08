@@ -1,5 +1,6 @@
 let DataBase = require("../../db/postgressql");
-const bcrypt = require("bcrypt")
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken")
 let saltGen;
 bcrypt.genSalt(10, (err, salt) => {
     if (err) {
@@ -55,7 +56,8 @@ module.exports.checkPassword = async function (req, res) {
         }
         let resultCompare = comparePassword(hash, resultUserPW[resultUserPW.length - 1].hash);
         if (resultCompare.success) {
-            res.send(200).send('Successfully authenticated')
+            let token = jwt.sign({userId:resultUserPW[0].UserName,username: req.data.userName},"SmodTiterp@2024",{expiresIn:"1h"});
+            res.send(200).send(token)
         }
         else {
             res.send(403).send('Incorrect Password')

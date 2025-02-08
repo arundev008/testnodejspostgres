@@ -3,10 +3,7 @@ const app = express();
 const os = require("os")
 let DataBase = require('./db/postgressql');
 let rootRouter = require("./srv/rootRouter")
-let port = process.env.PORT || 3000;
-// app.listen('/',(req,res) => {
-  // res.status(200).send('Welcome to the portal API')
-// })
+let port = process.env.PORT || 54467;
 
 app.get('/',(req,res) => {
   res.status(200).send('Welcome to Devsoft Portal API')
