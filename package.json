@@ -4,11 +4,13 @@
   "description": "Test",
   "main": "index.js",
   "scripts": {
-    "test": "node index.js"
+    "test": "node index.js",
+    "start": "node index.js"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "bcrypt": "^5.1.1",
     "express": "^4.21.2",
     "os": "^0.1.2",
     "pg": "^8.13.1"
