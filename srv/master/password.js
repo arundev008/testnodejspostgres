@@ -10,7 +10,7 @@ bcrypt.genSalt(10, (err, salt) => {
 });
 module.exports.setPassword = async function (req, res) {
     try {
-        let userPasswords = await DataBase.read('USER_PASSWORD', { UserName: req.data.userName });
+        let userPasswords = await DataBase.read('user_passwords', { UserName: req.data.userName });
         let result = generateHash(req.data.password);
 
         if (result.message) {
