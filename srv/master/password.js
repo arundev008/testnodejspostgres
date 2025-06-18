@@ -16,7 +16,7 @@ module.exports.setPassword = async function (req, res) {
         if (result.message) {
             throw new Error(result.message)
         }
-        let oData = { user_name: req.body.userName, password_index: 0, hash: result.hash,valid_from: '2025-06-18', valid_to : '9999-12-31' };
+        let oData = { user_name: req.body.userName, password_index: 0, hash: result,valid_from: '2025-06-18', valid_to : '9999-12-31' };
         if (!userPasswords.length) {
             oData.password_index = 1;
         }
@@ -54,7 +54,7 @@ module.exports.checkPassword = async function (req, res) {
         if (!resultUserPW.length) {
             throw new Error('There are no password is been set for you')
         }
-        let resultCompare = await comparePassword(result.hash, resultUserPW[resultUserPW.length - 1].hash);
+        let resultCompare = await comparePassword(result, resultUserPW[resultUserPW.length - 1].password_hash);
         if (resultCompare.success) {
             let token = jwt.sign({userId:resultUserPW[0].UserName,username: req.body.userName},"SmodTiterp@2024",{expiresIn:"1h"});
             res.send(200).send(token)
@@ -72,32 +72,34 @@ async function generateHash(password) {
         result.message = "internal server error. Kindly contact your system administrator";
         return;
     }
-    return await new Promise((resolve,reject) => {
-        bcrypt.hash(password, saltGen, (err, hash) => {
-            if (err) {
-                result.message = "internal server error. Kindly contact your system administrator"
-                return;
-            }
-            result.hash = hash;
-            resolve(result)
-        });
-    })
+    return await bcrypt.hash(password, 'smoderp');
+    // return await new Promise((resolve,reject) => {
+    //     bcrypt.hash(password, 10, (err, hash) => {
+    //         if (err) {
+    //             result.message = "internal server error. Kindly contact your system administrator"
+    //             return;
+    //         }
+    //         result.hash = hash;
+    //         resolve(result)
+    //     });
+    // })
 }
 
 async function comparePassword(hash, dbHash) {
     let resultCompare = { success: false }
-    return await new Promise((resolve,reject) => {
-        bcrypt.compare(hash, dbHash, (err, result) => {
-            if (err) {
-                resultCompare.message = 'Error comparing passwords:' + err
-            }
+    return await bcrypt.compare(hash,dbHash);
+    // return await new Promise((resolve,reject) => {
+    //     bcrypt.compare(hash, dbHash, (err, result) => {
+    //         if (err) {
+    //             resultCompare.message = 'Error comparing passwords:' + err
+    //         }
     
-            if (result) {
-                resultCompare.success = true;
-            } else {
-                result.success = false;
-            }
-            resolve(result)
-        }); 
-    })
+    //         if (result) {
+    //             resultCompare.success = true;
+    //         } else {
+    //             result.success = false;
+    //         }
+    //         resolve(result)
+    //     }); 
+    // })
 }
