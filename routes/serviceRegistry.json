@@ -1,0 +1,42 @@
+{
+    "withAuth": [
+        {
+            "entityName": "User",
+            "controllerPath": "../srv/master/user",
+            "getDisabled": false,
+            "putDisabled": false,
+            "deleteDisabled": false,
+            "patchDisabled": false
+        },
+        {
+            "entityName": "Employee",
+            "controllerPath": "../srv/master/employee",
+            "patchDisabled": true
+        },
+        {
+            "entityName": "EmployeePosition",
+            "controllerPath": "../srv/transaction/employeePosition",
+            "patchDisabled": true
+        },
+        {
+            "entityName": "Contractor",
+            "controllerPath": "../srv/master/contractor",
+            "patchDisabled": true
+        }
+    ],
+    "withOutAuth": [],
+    "functions": [
+        {
+            "Operation": "post",
+            "Name": "setPassword",
+            "ControllerPath": "../srv/master/password",
+            "HandlerName": "setPassword"
+        },
+        {
+            "Operation": "post",
+            "Name": "login",
+            "ControllerPath": "../srv/master/password",
+            "HandlerName": "checkPassword"
+        }
+    ]
+}

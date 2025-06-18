@@ -21,7 +21,7 @@ async function nextEmployeeNumber(type_of_user) {
 }
 
 /* ---------------- POST handler ---------------- */
-async function createEmployee(body) {
+async function postEmployee(body) {
   const req = ["user_name", "department", "date_of_joining", "designation"];
   const miss = checkMissingFields(body, req);
   if (miss.length) throw new Error(`Missing fields: ${miss.join(", ")}`);
@@ -97,7 +97,7 @@ async function getEmployee(query) {
 }
 
 /* ---------------- PUT handler ---------------- */
-async function updateEmployee(data) {
+async function putEmployee(data) {
   const { employee_number } = data;
   if (!employee_number)
     throw new Error("Missing field: employee_number");
@@ -197,8 +197,8 @@ async function deleteEmployee(employee_number) {
 }
 
 module.exports = {
-  createEmployee,
+  postEmployee,
   getEmployee,
-  updateEmployee,
+  putEmployee,
   deleteEmployee,
 };

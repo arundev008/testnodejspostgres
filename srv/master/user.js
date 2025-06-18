@@ -108,7 +108,7 @@ async function getUser({ user_name }) {
 }
 
 /* ---------- PUT /user ---------- */
-async function updateUser(body) {
+async function putUser(body) {
   const { user_name } = body;
   if (!user_name) throw new Error("Missing field: user_name");
 
@@ -210,4 +210,4 @@ async function deleteUser(user_name) {
   return { message: `User '${user_name}' soft deleted` };
 }
 
-module.exports = { postUser, getUser, updateUser, patchUser, deleteUser };
+module.exports = { postUser, getUser, putUser, patchUser, deleteUser };

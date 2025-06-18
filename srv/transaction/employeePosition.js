@@ -2,7 +2,7 @@ const DataBase = require("../../db/postgressql");
 const { sanitize, today, checkMissingFields } = require("../common/utils");
 
 /* ---------------- POST: create employee_positions row -------------- */
-async function createEmployeePosition(body) {
+async function postEmployeePosition(body) {
   const req = ["employee_number", "designation", "department", "approved_by"];
   const miss = checkMissingFields(body, req);
   if (miss.length) throw new Error(`Missing fields: ${miss.join(", ")}`);
@@ -54,7 +54,7 @@ async function getEmployeePosition(query) {
 }
 
 /* ---------------- PUT: update employee_position row -------------- */
-async function updateEmployeePosition(data) {
+async function putEmployeePosition(data) {
   const { employee_number } = data;
   if (!employee_number) {
     throw new Error("Missing field: employee_number");
@@ -112,7 +112,7 @@ async function updateEmployeePosition(data) {
 }
 
 module.exports = {
-  createEmployeePosition,
+  postEmployeePosition,
   getEmployeePosition,
-  updateEmployeePosition,
+  putEmployeePosition,
 };

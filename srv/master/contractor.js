@@ -102,7 +102,7 @@ async function getContractor({ external_emp_id }) {
 /* ──────────────────────────────────
    PUT  /contractor   (full update)
 ────────────────────────────────── */
-async function updateContractor(body) {
+async function putContractor(body) {
   const { external_emp_id } = body;
   if (!external_emp_id) throw new Error("Missing field: external_emp_id");
 
@@ -171,6 +171,6 @@ async function deleteContractor({ external_emp_id }) {
 module.exports = {
   postContractor,
   getContractor,
-  updateContractor,
+  putContractor,
   deleteContractor,
 };

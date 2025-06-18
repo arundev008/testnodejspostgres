@@ -10,29 +10,29 @@ bcrypt.genSalt(10, (err, salt) => {
 });
 module.exports.setPassword = async function (req, res) {
     try {
-        let userPasswords = await DataBase.read('user_passwords', { UserName: req.data.userName });
-        let result = generateHash(req.data.password);
+        let userPasswords = await DataBase.read('user_passwords', { user_name: req.body.userName });
+        let result = await generateHash(req.body.password);
 
         if (result.message) {
             throw new Error(result.message)
         }
-        let oData = { UserName: req.data.userName, index: 0, hash: result.hash };
+        let oData = { user_name: req.body.userName, password_index: 0, hash: result.hash,valid_from: '2025-06-18', valid_to : '9999-12-31' };
         if (!userPasswords.length) {
-            oData.index = 1;
+            oData.password_index = 1;
         }
         else {
             let sortedUserPassword = userPasswords.sort((a, b) => {
-                return a.index - b.index
+                return a.password_index - b.password_index
             })
             for (let i = sortedUserPassword.length; i > sortedUserPassword.length - 3; i--) {
-                let resultCompare = comparePassword(hash, sortedUserPassword[i - 1].hash);
+                let resultCompare = await comparePassword(hash, sortedUserPassword[i - 1].hash);
                 if (resultCompare.success) {
                     throw new Error('Your new password cant be match with last 3 passowrd')
                 }
             }
-            oData.index = sortedUserPassword[0].index + 1;
+            oData.password_index = sortedUserPassword[0].password_index + 1;
         }
-        let resultInsert = await DataBase.insert('USER_PASSWORD', oData)
+        let resultInsert = await DataBase.insert('user_passwords', oData)
         if (resultInsert) {
             res.status(200).send("Password has been successfully chnaged")
         }
@@ -45,18 +45,18 @@ module.exports.setPassword = async function (req, res) {
 }
 module.exports.checkPassword = async function (req, res) {
     try {
-        let result = generateHash(req.data.password);
+        let result = await generateHash(req.body.password);
         if (result.message) {
             throw new Error(result.message)
         }
-        let resultUserPW = await DataBase.read('USER_PASSWORD', { UserName: req.data.userName })
+        let resultUserPW = await DataBase.read('user_passwords', { user_name: req.body.userName })
 
         if (!resultUserPW.length) {
             throw new Error('There are no password is been set for you')
         }
-        let resultCompare = comparePassword(hash, resultUserPW[resultUserPW.length - 1].hash);
+        let resultCompare = await comparePassword(result.hash, resultUserPW[resultUserPW.length - 1].hash);
         if (resultCompare.success) {
-            let token = jwt.sign({userId:resultUserPW[0].UserName,username: req.data.userName},"SmodTiterp@2024",{expiresIn:"1h"});
+            let token = jwt.sign({userId:resultUserPW[0].UserName,username: req.body.userName},"SmodTiterp@2024",{expiresIn:"1h"});
             res.send(200).send(token)
         }
         else {
@@ -66,35 +66,38 @@ module.exports.checkPassword = async function (req, res) {
 
     }
 }
-function generateHash(password) {
+async function generateHash(password) {
     let result = {};
     if (!saltGen) {
         result.message = "internal server error. Kindly contact your system administrator";
         return;
     }
-    bcrypt.hash(password, saltGen, (err, hash) => {
-        if (err) {
-            result.message = "internal server error. Kindly contact your system administrator"
-            return;
-        }
-        result.hash = hash;
-    });
-    return result
+    return await new Promise((resolve,reject) => {
+        bcrypt.hash(password, saltGen, (err, hash) => {
+            if (err) {
+                result.message = "internal server error. Kindly contact your system administrator"
+                return;
+            }
+            result.hash = hash;
+            resolve(result)
+        });
+    })
 }
 
-function comparePassword(hash, dbHash) {
+async function comparePassword(hash, dbHash) {
     let resultCompare = { success: false }
-    bcrypt.compare(hash, dbHash, (err, result) => {
-        if (err) {
-            resultCompare.message = 'Error comparing passwords:' + err
-            return;
-        }
-
-        if (result) {
-            resultCompare.success = true;
-        } else {
-            result.success = false;
-        }
-    });
-    return resultCompare;
+    return await new Promise((resolve,reject) => {
+        bcrypt.compare(hash, dbHash, (err, result) => {
+            if (err) {
+                resultCompare.message = 'Error comparing passwords:' + err
+            }
+    
+            if (result) {
+                resultCompare.success = true;
+            } else {
+                result.success = false;
+            }
+            resolve(result)
+        }); 
+    })
 }
