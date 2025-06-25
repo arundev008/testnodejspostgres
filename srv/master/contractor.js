@@ -1,176 +1,160 @@
 const DataBase = require("../../db/postgressql");
+const { sanitize, today, checkMissingFields } = require("../common/utils");
 const {
-  sanitize,
-  today,
-  checkMissingFields,
-  formatDateDaysAgo,
-} = require("../common/utils");
+  createOrUpdateAddress,
+  validateAddressFields,
+} = require("../common/address");
 
-const ALLOWED_TYPES = ["C", "F"];
-const iso = (d) => new Date(d).toISOString().split("T")[0];
-const fmt = (d) => (d ? iso(d) : today());
+const PREFIX = { C: "C", F: "F" };
+const pad = (n) => n.toString().padStart(9, "0");
 
-function validateEnum(type) {
-  if (!ALLOWED_TYPES.includes(type))
-    throw new Error(`type_of_user must be 'C' or 'F'`);
+/* ---------------- Generate external_emp_id ---------------- */
+async function nextExternalEmpId(type_of_user) {
+  const prefix = PREFIX[type_of_user];
+  if (!prefix) throw new Error(`Unsupported contractor type '${type_of_user}'`);
+
+  const rows = await DataBase.readAll("contractor_users");
+  const maxNum = rows
+    .filter((r) => r.external_emp_id?.startsWith(prefix))
+    .reduce((m, r) => {
+      const n = parseInt(r.external_emp_id.slice(1), 10);
+      return isNaN(n) ? m : Math.max(m, n);
+    }, 0);
+
+  return `${prefix}${pad(maxNum + 1)}`;
 }
 
-async function ensureUserExists(user_name) {
-  const rows = await DataBase.read("master_users", { user_name: sanitize(user_name) });
-  if (!rows.length) throw new Error(`user_name '${user_name}' not found`);
-  return rows[0]; // return master_user row for ownership check
-}
+/* ---------------- POST: create contractor user ---------------- */
+async function postContractor(body) {
+  const required = ["user_name", "type_of_user", "tax_number", "agreed_amount", "address"];
+  const miss = checkMissingFields(body, required);
+  if (miss.length) throw new Error(`Missing fields: ${miss.join(", ")}`);
 
-async function ensureAddressExists(address_number) {
-  const rows = await DataBase.read("addresses", {
-    address_number: sanitize(address_number),
-  });
-  if (!rows.length) throw new Error(`Address '${address_number}' not found`);
-  return rows[0]; // return address row
-}
+  // Validate contractor type
+  if (!["C", "F"].includes(body.type_of_user)) {
+    throw new Error(`Invalid type_of_user '${body.type_of_user}'. Must be 'C' or 'F'`);
+  }
 
-async function ensureAddressBelongsToUser({ user_row, address_row }) {
-  if (sanitize(user_row.address_number) !== sanitize(address_row.address_number)) {
-    throw new Error(
-      `Address '${address_row.address_number}' does not belong to user '${user_row.user_name}'`
-    );
+  // Validate user exists and is active
+  const user = await DataBase.query(
+    `SELECT 1 FROM master_users WHERE user_name = $1 AND valid_to >= CURRENT_DATE`,
+    [sanitize(body.user_name)]
+  );
+  if (!user.length) {
+    throw new Error(`User '${body.user_name}' does not exist or is inactive`);
+  }
+
+  // Prevent duplicate contractor
+ const dupAny = await DataBase.query(
+  `SELECT valid_to FROM contractor_users WHERE user_name = $1`,
+  [sanitize(body.user_name)]
+);
+if (dupAny.length) {
+  const isSoftDeleted = new Date(dupAny[0].valid_to) < new Date();
+  if (isSoftDeleted) {
+    throw new Error(`User '${body.user_name}' was previously deleted. Please choose another user name.`);
+  } else {
+    throw new Error(`User '${body.user_name}' already exists. Please choose another user name.`);
   }
 }
 
-/* ──────────────────────────────────
-   POST  /contractor
-────────────────────────────────── */
-async function postContractor(body) {
-  /* required fields */
-  const required = [
-    "external_emp_id",
-    "user_name",
-    "type_of_user",
-    "beneficiary_address_number",
-    "tax_number",
-    "agreed_amount",
-  ];
-  const missing = checkMissingFields(body, required);
-  if (missing.length) throw new Error(`Missing fields: ${missing.join(", ")}`);
+  // Validate and create address
+  validateAddressFields(body.address);
+  const address_number = await createOrUpdateAddress(body.address);
 
-  validateEnum(body.type_of_user);
+  // Generate external_emp_id
+  const external_emp_id = await nextExternalEmpId(body.type_of_user);
 
-  const userRow   = await ensureUserExists(body.user_name);
-  const addrRow   = await ensureAddressExists(body.beneficiary_address_number);
-  await ensureAddressBelongsToUser({ user_row: userRow, address_row: addrRow });
-
-  const dup = await DataBase.read("contractor_users", {
-    external_emp_id: sanitize(body.external_emp_id),
-  });
-  if (dup.length) throw new Error(`external_emp_id '${body.external_emp_id}' already exists`);
-
-  /* insert */
   const row = {
-    external_emp_id:          sanitize(body.external_emp_id),
-    user_name:                sanitize(body.user_name),
-    type_of_user:             sanitize(body.type_of_user),
-    valid_from:               fmt(body.valid_from),
-    valid_to:                 fmt(body.valid_to || "9999-12-31"),
-    beneficiary_address_number: sanitize(body.beneficiary_address_number),
-    tax_number:               sanitize(body.tax_number),
-    agreed_amount:            Number(body.agreed_amount),
+    external_emp_id,
+    user_name: sanitize(body.user_name),
+    type_of_user: sanitize(body.type_of_user),
+    tax_number: sanitize(body.tax_number),
+    agreed_amount: parseFloat(body.agreed_amount),
+    valid_from: body.valid_from || today(),
+    valid_to: body.valid_to || "9999-12-31",
+    beneficiary_address_number: address_number,
   };
 
   await DataBase.insert("contractor_users", row);
-  return { message: `Contractor '${row.external_emp_id}' created` };
+
+  return {
+    message: "Contractor user created",
+    external_emp_id,
+  };
 }
 
-/* ──────────────────────────────────
-   GET  /contractor?external_emp_id=…
-────────────────────────────────── */
-async function getContractor({ external_emp_id }) {
-  if (!external_emp_id) throw new Error("Missing query parameter: external_emp_id");
-
-  const rows = await DataBase.read("contractor_users", {
-    external_emp_id: sanitize(external_emp_id),
-  });
-  if (!rows.length) return null;
-
-  const contractor = rows[0];
-  const address    = await DataBase.read("addresses", {
-    address_number: contractor.beneficiary_address_number,
-  });
-  contractor.beneficiary_address = address.length ? address[0] : null;
-  return contractor;
-}
-
-/* ──────────────────────────────────
-   PUT  /contractor   (full update)
-────────────────────────────────── */
-async function putContractor(body) {
-  const { external_emp_id } = body;
+/* ---------------- PUT: update contractor user (excluding address) ---------------- */
+async function putContractor(data) {
+  const { external_emp_id } = data;
   if (!external_emp_id) throw new Error("Missing field: external_emp_id");
 
-  const exists = await DataBase.read("contractor_users", {
+  const exists = await DataBase.query(
+    `SELECT 1 FROM contractor_users WHERE external_emp_id = $1 AND valid_to >= CURRENT_DATE`,
+    [sanitize(external_emp_id)]
+  );
+  if (!exists.length) {
+    throw new Error(`Contractor '${external_emp_id}' not found or inactive`);
+  }
+
+  const up = {};
+  if (data.tax_number !== undefined) up.tax_number = sanitize(data.tax_number);
+  if (data.agreed_amount !== undefined) up.agreed_amount = parseFloat(data.agreed_amount);
+  up.valid_from = data.valid_from || today();
+  up.valid_to = data.valid_to || "9999-12-31";
+
+  await DataBase.update("contractor_users", up, {
     external_emp_id: sanitize(external_emp_id),
   });
-  if (!exists.length) throw new Error(`Contractor '${external_emp_id}' not found`);
-
-  /* same validation rules as POST */
-  validateEnum(body.type_of_user);
-  const userRow = await ensureUserExists(body.user_name);
-  const addrRow = await ensureAddressExists(body.beneficiary_address_number);
-  await ensureAddressBelongsToUser({ user_row: userRow, address_row: addrRow });
-
-  const update = {
-    user_name:                 sanitize(body.user_name),
-    type_of_user:              sanitize(body.type_of_user),
-    valid_from:                fmt(body.valid_from || exists[0].valid_from),
-    valid_to:                  fmt(body.valid_to   || exists[0].valid_to),
-    beneficiary_address_number: sanitize(body.beneficiary_address_number),
-    tax_number:                sanitize(body.tax_number),
-    agreed_amount:             Number(body.agreed_amount),
-  };
-
-  await DataBase.update(
-    "contractor_users",
-    update,
-    { external_emp_id: sanitize(external_emp_id) }
-  );
 
   return { message: `Contractor '${external_emp_id}' updated` };
 }
 
-/* ──────────────────────────────────
-   DELETE  /contractor?external_emp_id=…
-   (soft delete)
-────────────────────────────────── */
+/* ---------------- GET: fetch contractor user ---------------- */
+async function getContractor(query) {
+  const { external_emp_id } = query;
+  if (!external_emp_id) {
+    throw new Error("Missing query parameter: external_emp_id");
+  }
+
+  const rows = await DataBase.query(
+    `SELECT * FROM contractor_users 
+     WHERE external_emp_id = $1 AND valid_to >= CURRENT_DATE`,
+    [sanitize(external_emp_id)]
+  );
+
+  return rows.length ? rows[0] : null;
+}
+
+/* ---------------- DELETE: soft-delete contractor user ---------------- */
 async function deleteContractor({ external_emp_id }) {
-  if (!external_emp_id) throw new Error("Missing query parameter: external_emp_id");
+  if (!external_emp_id) throw new Error("Missing field: external_emp_id");
 
-  const rows = await DataBase.read("contractor_users", {
-    external_emp_id: sanitize(external_emp_id),
-  });
-  if (!rows.length) throw new Error(`Contractor '${external_emp_id}' not found`);
+  const exists = await DataBase.query(
+    `SELECT 1 FROM contractor_users 
+     WHERE external_emp_id = $1 AND valid_to >= CURRENT_DATE`,
+    [sanitize(external_emp_id)]
+  );
+  if (!exists.length) throw new Error(`Contractor '${external_emp_id}' not found`);
 
-  const yesterday = formatDateDaysAgo(1);
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const formatted = yesterday.toISOString().split("T")[0];
+
   await DataBase.update(
     "contractor_users",
-    { valid_to: yesterday },
+    { valid_to: formatted },
     { external_emp_id: sanitize(external_emp_id) }
   );
 
-  /* also soft‑delete address */
-  await DataBase.update(
-    "addresses",
-    { valid_to: yesterday },
-    { address_number: rows[0].beneficiary_address_number }
-  );
-
-  return { message: `Contractor '${external_emp_id}' soft‑deleted` };
+  return {
+    message: `Contractor '${external_emp_id}' soft-deleted )`,
+  };
 }
 
-/* ──────────────────────────────────
-   EXPORTS
-────────────────────────────────── */
 module.exports = {
   postContractor,
-  getContractor,
   putContractor,
+  getContractor,
   deleteContractor,
 };

@@ -22,6 +22,11 @@
             "entityName": "Contractor",
             "controllerPath": "../srv/master/contractor",
             "patchDisabled": true
+        },
+        {
+            "entityName": "Address",
+            "controllerPath": "../srv/common/address",
+            "postDisabled": true        
         }
     ],
     "withOutAuth": [],

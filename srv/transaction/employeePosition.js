@@ -10,22 +10,46 @@ async function postEmployeePosition(body) {
   const emp = await DataBase.read("employees", {
     employee_number: sanitize(body.employee_number),
   });
-  if (!emp.length)
-    throw new Error(`employee_number '${body.employee_number}' not found in employees`);
+  if (!emp.length || new Date(emp[0].valid_to) <= new Date()) {
+    throw new Error(`employee_number '${body.employee_number}' is not active or does not exist`);
+  }
 
   const user = await DataBase.read("master_users", {
     user_name: sanitize(body.approved_by),
   });
-  if (!user.length)
+  if (!user.length) {
     throw new Error(`approved_by '${body.approved_by}' not found in master_users`);
+  }
 
+  const activePositions = await DataBase.read("employee_positions", {
+    employee_number: sanitize(body.employee_number),
+  });
+
+  const todayDate = new Date();
+  const yesterday = new Date(todayDate);
+  yesterday.setDate(todayDate.getDate() - 1);
+  const formattedYesterday = yesterday.toISOString().split("T")[0];
+
+  for (const pos of activePositions) {
+    if (new Date(pos.valid_to) > todayDate) {
+      
+      await DataBase.update(
+        "employee_positions",
+        { valid_to: formattedYesterday },
+        {
+          employee_number: sanitize(body.employee_number),
+          valid_from: pos.valid_from,  
+        }
+      );
+    }
+  }
   const row = {
     employee_number: sanitize(body.employee_number),
     designation: sanitize(body.designation),
-    valid_from: body.valid_from || today(),
+    valid_from: body.valid_from || todayDate.toISOString().split("T")[0],
     valid_to: body.valid_to || "9999-12-31",
     approved_by: sanitize(body.approved_by),
-    approved_on: body.approved_on || today(),
+    approved_on: body.approved_on || todayDate.toISOString().split("T")[0],
     department: sanitize(body.department),
   };
 
@@ -34,23 +58,33 @@ async function postEmployeePosition(body) {
   return { message: "Employee position created", data: row };
 }
 
+
 /* ---------------- GET: fetch employee_position by employee_number -------------- */
 async function getEmployeePosition(query) {
   const { employee_number } = query;
+  if (!employee_number) throw new Error("Missing query parameter: employee_number");
 
-  if (!employee_number) {
-    throw new Error("Missing query parameter: employee_number");
+  const emp = await DataBase.read("employees", {
+    employee_number: sanitize(employee_number),
+  });
+
+  if (!emp.length || new Date(emp[0].valid_to) <= new Date()) {
+    throw new Error(`employee_number '${employee_number}' is not active`);
   }
 
   const result = await DataBase.read("employee_positions", {
     employee_number: sanitize(employee_number),
   });
 
-  if (!result || result.length === 0) {
-    return null;
-  }
+  if (!result || result.length === 0) return null;
 
-  return result[0]; // Modify here to return all rows if needed
+  return result.map(row => {
+    const cleaned = {};
+    for (const key in row) {
+      cleaned[key] = sanitize(row[key]);
+    }
+    return cleaned;
+  });
 }
 
 /* ---------------- PUT: update employee_position row -------------- */
@@ -60,12 +94,18 @@ async function putEmployeePosition(data) {
     throw new Error("Missing field: employee_number");
   }
 
-  const emp = await DataBase.read("employees", {
-    employee_number: sanitize(employee_number),
-  });
-  if (!emp.length) {
-    throw new Error(`employee_number '${employee_number}' does not exist`);
+  const rows = await DataBase.query(
+    `SELECT * FROM employee_positions 
+     WHERE employee_number = $1 AND valid_to = '9999-12-31' 
+     ORDER BY valid_from DESC LIMIT 1`,
+    [sanitize(employee_number)]
+  );
+
+  if (!rows.length) {
+    throw new Error(`No active employee_position found for '${employee_number}'`);
   }
+
+  const target = rows[0];
 
   if (!data.approved_by) {
     throw new Error("Missing field: approved_by");
@@ -78,36 +118,37 @@ async function putEmployeePosition(data) {
     throw new Error(`approved_by '${data.approved_by}' not found`);
   }
 
-  const req = [
+  const required = [
     "designation",
-    "valid_from",
-    "valid_to",
     "department",
     "approved_by",
     "approved_on",
   ];
-  const miss = checkMissingFields(data, req);
-  if (miss.length) {
-    throw new Error(`Missing fields: ${miss.join(", ")}`);
+  const missing = checkMissingFields(data, required);
+  if (missing.length) {
+    throw new Error(`Missing fields: ${missing.join(", ")}`);
   }
 
   const updatePayload = {
     designation: sanitize(data.designation),
-    valid_from: data.valid_from,
-    valid_to: data.valid_to,
     department: sanitize(data.department),
     approved_by: sanitize(data.approved_by),
     approved_on: data.approved_on,
+    valid_from: data.valid_from || target.valid_from,
+    valid_to: data.valid_to || target.valid_to,
   };
 
   await DataBase.update(
     "employee_positions",
     updatePayload,
-    { employee_number: sanitize(employee_number) }
+    {
+      employee_number: sanitize(employee_number),
+      valid_to: "9999-12-31",
+    }
   );
 
   return {
-    message: `employee_positions record for '${employee_number}' updated successfully`
+    message: `employee_position for '${employee_number}' updated successfully`,
   };
 }
 

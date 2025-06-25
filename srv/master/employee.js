@@ -26,19 +26,22 @@ async function postEmployee(body) {
   const miss = checkMissingFields(body, req);
   if (miss.length) throw new Error(`Missing fields: ${miss.join(", ")}`);
 
-  const userRows = await DataBase.read("master_users", {
-    user_name: sanitize(body.user_name),
-  });
+ const userRows = await DataBase.query(
+    `SELECT * FROM master_users WHERE user_name = $1 AND valid_to >= CURRENT_DATE`,
+    [sanitize(body.user_name)]
+  );
   if (!userRows.length)
     throw new Error(`user_name '${body.user_name}' does not exist`);
 
-  const dup = await DataBase.read("employees", {
-    user_name: sanitize(body.user_name),
-  });
+  const dup = await DataBase.query(
+    `SELECT * FROM employees WHERE user_name = $1`,
+    [sanitize(body.user_name)]
+  );
   if (dup.length) {
     const existingEmpNo = dup[0].employee_number;
+    const wasActive = new Date(dup[0].valid_to) >= new Date();
     throw new Error(
-      `An employee record already exists for user_name '${body.user_name}' with employee_number '${existingEmpNo}'`
+          `An employee record already exists for user_name '${body.user_name}' with employee_number '${existingEmpNo}' and is ${wasActive ? "active" : "soft-deleted"}`
     );
   }
 
@@ -46,13 +49,12 @@ async function postEmployee(body) {
   const employee_number = await nextEmployeeNumber(type_of_user);
 
   if (body.manager_employee_id) {
-    const mgr = await DataBase.read("employees", {
-      employee_number: sanitize(body.manager_employee_id),
-    });
+    const mgr = await DataBase.query(
+      `SELECT * FROM employees WHERE employee_number = $1 AND valid_to >= CURRENT_DATE`,
+      [sanitize(body.manager_employee_id)]
+    );
     if (!mgr.length)
-      throw new Error(
-        `manager_employee_id '${body.manager_employee_id}' not found`
-      );
+      throw new Error(`manager_employee_id '${body.manager_employee_id}' not found or inactive`);
   }
 
   const row = {
@@ -79,9 +81,10 @@ async function getEmployee(query) {
     throw new Error("Missing query parameter: employee_number");
   }
 
-  const result = await DataBase.read("employees", {
-    employee_number: sanitize(employee_number),
-  });
+  const result = await DataBase.query(
+    `SELECT * FROM employees WHERE employee_number = $1 AND valid_to >= CURRENT_DATE`,
+    [sanitize(employee_number)]
+  );
 
   if (!result || result.length === 0) {
     return null;
@@ -102,9 +105,10 @@ async function putEmployee(data) {
   if (!employee_number)
     throw new Error("Missing field: employee_number");
 
-  const existing = await DataBase.read("employees", {
-    employee_number: sanitize(employee_number),
-  });
+  const existing = await DataBase.query(
+    `SELECT * FROM employees WHERE employee_number = $1 AND valid_to >= CURRENT_DATE`,
+    [sanitize(employee_number)]
+  );
   if (!existing.length)
     throw new Error(`Employee '${employee_number}' not found`);
 
@@ -118,15 +122,17 @@ async function putEmployee(data) {
   if (missing.length)
     throw new Error(`Missing fields: ${missing.join(", ")}`);
 
-  const users = await DataBase.read("master_users", {
-    user_name: sanitize(data.user_name),
-  });
+  const users = await DataBase.query(
+    `SELECT * FROM master_users WHERE user_name = $1 AND valid_to >= CURRENT_DATE`,
+    [sanitize(data.user_name)]
+  );
   if (!users.length)
     throw new Error(`user_name '${data.user_name}' does not exist`);
 
-  const clash = await DataBase.read("employees", {
-    user_name: sanitize(data.user_name),
-  });
+  const clash = await DataBase.query(
+    `SELECT * FROM employees WHERE user_name = $1 AND valid_to >= CURRENT_DATE`,
+    [sanitize(data.user_name)]
+  );
   if (
     clash.length &&
     clash[0].employee_number !== employee_number
@@ -137,9 +143,10 @@ async function putEmployee(data) {
   }
 
   if (data.manager_employee_id) {
-    const mgr = await DataBase.read("employees", {
-      employee_number: sanitize(data.manager_employee_id),
-    });
+    const mgr = await DataBase.query(
+      `SELECT * FROM employees WHERE employee_number = $1 AND valid_to >= CURRENT_DATE`,
+      [sanitize(data.manager_employee_id)]
+    );
     if (!mgr.length)
       throw new Error(
         `manager_employee_id '${data.manager_employee_id}' not found`
@@ -170,14 +177,15 @@ async function putEmployee(data) {
 }
 
 /* ---------------- DELETE handler (soft delete) ---------------- */
-async function deleteEmployee(employee_number) {
+async function deleteEmployee({employee_number}) {
   if (!employee_number) {
     throw new Error("Missing field: employee_number");
   }
 
-  const existing = await DataBase.read("employees", {
-    employee_number: sanitize(employee_number),
-  });
+ const existing = await DataBase.query(
+    `SELECT * FROM employees WHERE employee_number = $1 AND valid_to >= CURRENT_DATE`,
+    [sanitize(employee_number)]
+  );
 
   if (!existing.length) {
     throw new Error(`Employee '${employee_number}' not found`);
@@ -193,7 +201,7 @@ async function deleteEmployee(employee_number) {
     { employee_number: sanitize(employee_number) }
   );
 
-  return { message: `Employee '${employee_number}' soft-deleted (valid_to set to ${formatted})` };
+  return { message: `Employee '${employee_number}' soft-deleted ` };
 }
 
 module.exports = {

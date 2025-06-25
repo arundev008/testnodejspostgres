@@ -1,4 +1,5 @@
 const express = require("express");
+const jwt = require("jsonwebtoken");
 const router = express.Router();
 const listOfService = require("./serviceRegistry.json");
 const arrayOfOperations = ["get", "post", "delete", "put", "patch"];
@@ -20,10 +21,12 @@ for (let obj of listOfService.withAuth) {
                 continue
             }
             
-            router[operation](`/${obj.entityName}`, async (req, res) => {
+            router[operation](`/${obj.entityName}`,authenticate,async (req, res) => {
                 try {
                     const controller = require(obj.controllerPath);
-                    const result = await controller[`${operation}${obj.entityName}`](req.query)
+                    const payload = (operation === "get" || operation === "delete") ? req.query : req.body;
+                    const result = await controller[`${operation}${obj.entityName}`](payload);
+                   // const result = await controller[`${operation}${obj.entityName}`](req.query)
                     if (!result) {
                         return res.status(404).json({ message: `${obj.entityName} not found` });
                     }
@@ -61,7 +64,7 @@ for (let obj of listOfService.functions) {
 
 module.exports = router ;
 function authenticate(req,res,next){
-    const authHeader = req.headers["Authorization"];
+    const authHeader = req.headers["authorization"];
     const token = authHeader && authHeader.split(' ')[1];
     if(!token){
         res.status(401).send({message:'You are not authorized'})
